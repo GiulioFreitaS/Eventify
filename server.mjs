@@ -1,26 +1,29 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
+import { networkInterfaces } from 'node:os';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.EVENTIFY_PORT || 4173);
+const lan = process.argv.includes('--lan');
 const contentTypes = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.ts': 'text/javascript; charset=utf-8', '.png': 'image/png',
+  '.ts': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8', '.png': 'image/png',
   '.jpg': 'image/jpeg', '.woff2': 'font/woff2',
 };
 const sourceCache = new Map();
 
-const server = createServer(async (request, response) => {
+async function serve(request, response) {
   try {
     if (!['GET', 'HEAD'].includes(request.method)) {
       response.writeHead(405, { Allow: 'GET, HEAD' }).end();
       return;
     }
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
-    const asset = /^\/(assets\/[a-z0-9._-]+|src\/[a-z0-9_-]+\.ts|styles\.css)$/i.test(pathname);
+    const asset = /^\/(assets\/[a-z0-9._-]+|src\/[a-z0-9_-]+\.ts|styles\.css|mobile\.css|manifest\.webmanifest|sw\.js)$/i.test(pathname);
     const page = !pathname.includes('.');
     if (!asset && !page) {
       response.writeHead(404).end();
@@ -55,10 +58,20 @@ const server = createServer(async (request, response) => {
     if (status === 500) console.error(error);
     response.writeHead(status).end();
   }
-});
+}
 
-server.on('error', error => {
-  console.error(`Não foi possível iniciar a Eventify: ${error.message}`);
-  process.exitCode = 1;
-});
-server.listen(port, '127.0.0.1', () => console.log(`Eventify disponível em http://127.0.0.1:${port}`));
+const hosts = new Set(['127.0.0.1']);
+if (lan) {
+  for (const host of Object.values(networkInterfaces()).flat()) {
+    if (host?.family === 'IPv4' && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host.address)) hosts.add(host.address);
+  }
+}
+for (const host of hosts) {
+  const server = createServer(serve);
+  server.on('error', error => {
+    console.error(`Eventify em ${host}:${port}: ${error.message}`);
+    if (host === '127.0.0.1') process.exit(1);
+  });
+  const label = host === '127.0.0.1' ? 'Eventify disponível' : 'Celular na mesma rede';
+  server.listen(port, host, () => console.log(`${label}: http://${host}:${port}`));
+}

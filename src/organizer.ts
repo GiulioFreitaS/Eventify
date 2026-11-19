@@ -12,6 +12,7 @@ export function organizerShell(state: State, content: string, pathname: string) 
   const user = profileFor(state);
   return `<div class="org-layout">
     <aside class="org-sidebar"><p class="eyebrow">Área do organizador</p>
+      <a class="mobile-only org-mode-link" href="/">Modo participante ${icon('arrow')}</a>
       <nav aria-label="Área do organizador">${links.map(([label, href, symbol]) => `<a href="${href}" ${(href === '/organizador' ? pathname === href : pathname.startsWith(href)) ? 'aria-current="page"' : ''}>${icon(symbol)}${label}</a>`).join('')}</nav>
       <div class="org-switch"><a href="/">Modo participante ${icon('external')}</a>${user ? `<a href="/perfil">${avatar(user.name)}${esc(user.name)}</a>` : '<a href="/entrar">Entrar</a>'}</div>
     </aside>
@@ -157,9 +158,9 @@ export function participants(state: State, params: URLSearchParams, check = fals
       <nav class="people-filters" aria-label="Status do check-in">${[['','Todos'],['presentes','Presentes'],['aguardando','Aguardando']].map(([key,label]) => `<a href="${esc(pageHref(1,key))}" ${filter===key?'aria-current="page"':''}>${label}</a>`).join('')}</nav>
       <div class="row-actions"><button class="text-link" data-export="${esc(event.id)}">${icon('download')} Exportar lista</button><a class="btn" href="${participantsUrl(event.id,true)}">${icon('scan')} Abrir check-in</a></div></div>
       ${visible.length ? `<div class="table-scroll"><table><thead><tr><th scope="col">Participante</th><th scope="col">Ingresso</th><th scope="col">Status</th><th scope="col">Entrada</th><th scope="col">Ações</th></tr></thead>
-      <tbody>${visible.map(ticket => `<tr><td><div class="person">${avatar(ticket.name)}<span>${esc(ticket.name)}</span></div></td><td>Individual</td>
+      <tbody>${visible.map(ticket => `<tr><td><div class="person">${avatar(ticket.name)}<span>${esc(ticket.name)}<small class="mobile-only">1 ingresso</small></span></div></td><td>Individual</td>
       <td><span class="status-pill ${ticket.checkedInAt ? 'good' : ''}">${participantStatus(ticket)}</span></td><td>${checkedAt(ticket)}</td>
-      <td><button class="text-link" data-participant="${esc(ticket.id)}">Ver detalhes ${icon('arrow')}</button></td></tr>`).join('')}</tbody></table></div>
+      <td><button class="text-link" data-participant="${esc(ticket.id)}" aria-label="Ver detalhes de ${esc(ticket.name)}"><span class="desktop-label">Ver detalhes</span> ${icon('arrow')}</button></td></tr>`).join('')}</tbody></table></div>
       <div class="pagination"><span>Exibindo ${(page-1)*perPage+1}–${(page-1)*perPage + visible.length} de ${matching.length}</span><nav aria-label="Páginas da lista">
         ${page > 1 ? `<a href="${esc(pageHref(page-1))}" aria-label="Página anterior">${icon('back')}</a>` : ''}
         <span aria-current="page">${page} / ${last}</span>

@@ -1,0 +1,13 @@
+# Referências de design e arquivo-mestre da marca
+/Eventify_Design_Aprovado/
+/Logo Eventify terracota com cortes diagonais.png
+
+# Configuração e saídas locais
+.env
+.env.*
+!.env.example
+/node_modules/
+/dist/
+/coverage/
+*.log
+*.bundle

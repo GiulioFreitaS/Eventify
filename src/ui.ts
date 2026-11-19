@@ -16,6 +16,7 @@ const icons = {
   users: '<circle cx="10" cy="8" r="4"/><path d="M2 21a8 8 0 0 1 16 0M17 4a4 4 0 0 1 0 8m3 3a7 7 0 0 1 2 6"/>',
   scan: '<path d="M8 3H4a1 1 0 0 0-1 1v4m13-5h4a1 1 0 0 1 1 1v4m0 8v4a1 1 0 0 1-1 1h-4M3 16v4a1 1 0 0 0 1 1h4M6 12h12"/>',
   home: '<path d="m3 10 9-7 9 7v10H15v-6H9v6H3Z"/>',
+  compass: '<circle cx="12" cy="12" r="9"/><path d="m16 8-2.4 5.6L8 16l2.4-5.6L16 8Z"/>',
   plus: '<path d="M12 4v16M4 12h16"/>', check: '<path d="m4 12 5 5L20 6"/>',
   edit: '<path d="m15 5 4 4M4 20l4-1L21 6l-4-4L4 15Z"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>', close: '<path d="m5 5 14 14M19 5 5 19"/>',
@@ -33,7 +34,10 @@ export type Icon = keyof typeof icons;
 export const icon = (key: Icon) => `<svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[key]}</svg>`;
 export const logo = (variant = '') => `<a class="logo ${variant}" href="/" aria-label="Eventify · Explorar"><img src="/assets/eventify.png" width="2050" height="451" alt="Eventify"></a>`;
 export const avatar = (name = 'Visitante') => `<span class="avatar" aria-hidden="true">${esc([...name.trim()][0]?.toUpperCase() || 'V')}</span>`;
-export const picture = (event: EventData, card = false) => `/assets/${card && event.cover === 'clay' ? 'ceramica-card.jpg' : covers[event.cover]?.[0] || covers.music[0]}`;
+export const picture = (event: EventData, card = false) => {
+  const name = covers[event.cover]?.[0] || covers.music[0];
+  return `/assets/${card ? name.replace('.jpg', '-card.jpg') : name}`;
+};
 export const options = (values: readonly string[], selected: string) => values.map(value => `<option value="${esc(value)}"${value === selected ? ' selected' : ''}>${esc(value)}</option>`).join('');
 export const arrowLink = (label: string, href: string, css = 'text-link') => `<a class="${css}" href="${esc(href)}">${esc(label)}${icon('arrow')}</a>`;
 export const facts = (lines: [Icon, string][]) => `<ul class="facts">${lines.map(([key, value]) => `<li>${icon(key)}<span>${esc(value)}</span></li>`).join('')}</ul>`;
@@ -46,14 +50,15 @@ export function bookmark(state: State, event: Event, text = false) {
   const isSaved = savedFor(state).includes(event.id);
   return `<button type="button" class="bookmark ${isSaved ? 'marked' : ''} ${text ? 'with-label' : ''}" data-save="${esc(event.id)}" aria-pressed="${isSaved}" aria-label="${isSaved ? 'Remover dos salvos: ' : 'Salvar evento: '}${esc(event.title)}">${icon('bookmark')}${text ? (isSaved ? 'Salvo' : 'Salvar evento') : ''}</button>`;
 }
-export function eventCard(state: State, event: Event) {
-  return `<article class="event-card">
+export function eventCard(state: State, event: Event, discovery = false) {
+  return `<article class="event-card" data-event-card="${esc(event.id)}">
     <div class="event-media">
-      <a href="${eventUrl(event.id)}" aria-label="${esc(event.title)}"><img src="${picture(event, true)}" alt="" width="440" height="216">${dateFlag(event.date)}</a>
+      <a href="${eventUrl(event.id)}" aria-label="${esc(event.title)}"><img src="${picture(event, true)}" alt="" width="1280" height="853" loading="lazy" decoding="async">${dateFlag(event.date)}</a>
       ${bookmark(state, event)}
     </div>
     <h3><a href="${eventUrl(event.id)}">${esc(event.title)}</a></h3>
-    <div class="card-meta">${icon('pin')}<span>${esc(event.neighborhood)} · ${esc(event.time.replace(':00', 'h').replace(':','h'))}</span><span class="card-price">${priceLabel(event.price)}</span></div>
+    <div class="card-meta">${discovery ? esc(event.neighborhood)
+      : `${icon('pin')}<span>${esc(event.neighborhood)} · ${esc(event.time.replace(':00', 'h').replace(':','h'))}</span><span class="card-price">${priceLabel(event.price)}</span>`}</div>
   </article>`;
 }
 export const panelTitle = (title: string, description = '', eyebrow = '') => `<header class="page-heading">${eyebrow ? `<p class="eyebrow accent">${esc(eyebrow)}</p>` : ''}<h1>${esc(title)}</h1>${description ? `<p>${esc(description)}</p>` : ''}</header>`;

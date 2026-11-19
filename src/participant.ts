@@ -9,8 +9,8 @@ export function eventDetails(state: State, event: Event, exploreUrl: string) {
   return `<div class="container page-body">
     <nav class="breadcrumbs" aria-label="Localização da página"><a href="${esc(exploreUrl)}">Explorar</a><span>/</span><a href="/?categoria=${encodeURIComponent(event.category)}">${esc(event.category)}</a><span>/</span><span>${esc(event.title)}</span></nav>
     <div class="details-grid">
+      <img class="details-photo" src="${picture(event)}" alt="" width="884" height="433">
       <div class="details-story">
-        <img class="details-photo" src="${picture(event)}" alt="" width="884" height="433">
         <nav class="tabs section-tabs" aria-label="Informações do evento"><a href="#sobre" aria-current="location">Sobre</a><a href="#programacao">Programação</a><a href="#local">Local</a></nav>
         <section id="sobre" class="story-section"><p>${esc(event.description)}</p><p>Por <strong class="accent">${esc(event.organizer)}</strong></p></section>
         <section id="programacao" class="story-section"><h2>Programação</h2>${sections.length ? `<ol class="schedule">${sections.map(([time, label]) => `<li><b>${esc(time)}</b>${label ? `<span>${esc(label)}</span>` : ''}</li>`).join('')}</ol>` : '<p>Programação a confirmar.</p>'}</section>
@@ -80,32 +80,73 @@ export function ticketPaper(ticket: Registration, event: Event) {
   </div>`;
 }
 
-export function wallet(state: State, selectedId: string | undefined, params: URLSearchParams) {
+function ticketDeck(event: Event, tickets: Registration[], ticket: Registration, selected: boolean) {
+  const index = tickets.indexOf(ticket);
+  const stacked = tickets.length > 1;
+  const position = `${index + 1} de ${tickets.length}`;
+  const openTicket = arrowLink('Abrir ingresso', ticketUrl(ticket.id) + '?ver=ingresso');
+  return `<article class="ticket-deck" data-ticket-stack="${esc(event.id)}" data-ticket-ids="${esc(JSON.stringify(tickets.map(item => item.id)))}" data-ticket-current="${index}">
+    <div class="${stacked ? 'ticket-deck-pile' : ''}"${tickets.length > 2 ? ' data-extra-layer' : ''}>
+      <div class="ticket-row${stacked ? ' ticket-deck-face' : ''}${selected ? ' selected' : ''}" ${stacked ? `data-ticket-swipe tabindex="0" role="group" aria-label="${esc(event.title)}, ingresso ${position}"` : ''}>
+        <div class="ticket-row-photo"><img src="${picture(event, true)}" alt="" width="420" height="250" draggable="false">${dateFlag(event.date)}</div>
+        ${stacked ? `<div class="ticket-deck-stub">
+          <div class="ticket-deck-title"><h2>${esc(event.title)}</h2><span class="ticket-deck-code">${esc(ticket.code)}</span></div>
+          <p><strong>${esc(eventDate(event))}</strong></p>
+          <p>${esc(locationLabel(event))}</p>
+          <div class="ticket-deck-links"><span>${esc(ticket.name)}</span>${openTicket}</div>
+        </div>` : `<div class="ticket-row-content"><h2>${esc(event.title)}</h2>
+          ${facts([['calendar', eventDate(event)], ['pin', locationLabel(event)], ['ticket', '1 ingresso'], ['user', ticket.name]])}
+          ${openTicket}
+        </div>`}
+      </div>
+    </div>
+    ${stacked ? `<div class="ticket-deck-controls" role="group" aria-label="Ingressos de ${esc(event.title)}">
+      ${tickets.length <= 5 ? `<div class="ticket-deck-dots">${tickets.map((item, i) => `<button type="button" data-ticket-index="${i}" aria-label="Ingresso ${i + 1}, ${esc(item.code)}"${i === index ? ' aria-current="true"' : ''}></button>`).join('')}</div>` : ''}
+      <p class="ticket-deck-count">Ingresso ${position}<span> · Deslize para folhear</span></p>
+      <div class="ticket-deck-arrows">
+        <button type="button" data-ticket-step="-1" aria-label="Ingresso anterior">${icon('back')}</button>
+        <button type="button" data-ticket-step="1" aria-label="Próximo ingresso">${icon('arrow')}</button>
+      </div>
+    </div>` : ''}
+  </article>`;
+}
+
+export function wallet(state: State, selectedId: string | undefined, params: URLSearchParams, deckChoices: ReadonlyMap<string, string>) {
   const all = ownerTickets(state).flatMap(ticket => {
     const event = state.events.find(item => item.id === ticket.eventId);
     return event ? [{ ticket, event }] : [];
   });
   const selected = all.find(pair => pair.ticket.id === selectedId);
-  const past = params.get('periodo') === 'anteriores' || Boolean(selected && isPast(selected.event));
+  const past = selected ? isPast(selected.event) : params.get('periodo') === 'anteriores';
   const visible = all.filter(pair => isPast(pair.event) === past).sort((a,b) => past ? b.event.date.localeCompare(a.event.date) : a.event.date.localeCompare(b.event.date));
-  const preview = selected || visible[0];
+  const groups = new Map<string, { event: Event; tickets: Registration[] }>();
+  for (const { event, ticket } of visible) {
+    const group = groups.get(event.id);
+    if (group) group.tickets.push(ticket);
+    else groups.set(event.id, { event, tickets: [ticket] });
+  }
+  const first = visible[0];
+  const preview = selected || visible.find(pair => pair.event.id === first?.event.id && pair.ticket.id === deckChoices.get(pair.event.id)) || first;
+  const decks = [...groups.values()].map(({ event, tickets }) => {
+    const isSelected = event.id === preview?.event.id;
+    const ticket = isSelected ? preview.ticket : tickets.find(item => item.id === deckChoices.get(event.id)) || tickets[0];
+    return ticketDeck(event, tickets, ticket, isSelected);
+  });
   const confirmed = selected && params.get('confirmado') === '1';
-  return `<div class="wallet-layout ${preview ? '' : 'single'}">
+  const open = Boolean(selected && (params.get('ver') !== 'lista' || confirmed));
+  const listUrl = past ? '/ingressos?periodo=anteriores' : '/ingressos';
+  return `<div class="wallet-layout${preview ? '' : ' single'}${open ? ' wallet-open' : ''}">
     <section class="wallet-list">
       ${panelTitle('Meus ingressos', 'Seu próximo encontro está aqui.')}
       ${confirmed ? `<div class="notice success" role="status">${icon('check')} Inscrição confirmada. Seu ingresso já está na carteira.</div>` : ''}
       ${selectedId && !selected ? '<p class="notice">Ingresso indisponível para este perfil local.</p>' : ''}
       <nav class="tabs section-tabs" aria-label="Período dos ingressos"><a href="/ingressos" ${past ? '' : 'aria-current="page"'}>Próximos</a><a href="/ingressos?periodo=anteriores" ${past ? 'aria-current="page"' : ''}>Anteriores</a></nav>
-      <div class="ticket-list">${visible.length ? visible.map(({ticket,event}) => `<article class="ticket-row ${preview?.ticket.id === ticket.id ? 'selected' : ''}">
-        <div class="ticket-row-photo"><img src="${picture(event, true)}" alt="" width="420" height="250">${dateFlag(event.date)}</div>
-        <div class="ticket-row-content"><h2>${esc(event.title)}</h2>
-          ${facts([['calendar', eventDate(event)], ['pin', locationLabel(event)], ['ticket', '1 ingresso'], ['user', ticket.name]])}
-          ${arrowLink('Abrir ingresso', ticketUrl(ticket.id))}
-        </div>
-      </article>`).join('') : empty(past ? 'Nenhum ingresso anterior.' : 'Sua carteira está vazia.', 'Descubra um evento e faça sua inscrição para receber o ingresso aqui.', ['Explorar eventos', '/'])}</div>
+      <div class="ticket-list">${decks.length ? decks.join('') : empty(past ? 'Nenhum ingresso anterior.' : 'Sua carteira está vazia.', 'Descubra um evento e faça sua inscrição para receber o ingresso aqui.', ['Explorar eventos', '/'])}</div>
     </section>
     ${preview ? `<aside class="wallet-preview" aria-label="Ingresso selecionado">
-      <p class="eyebrow">Seu ingresso</p>${ticketPaper(preview.ticket, preview.event)}
+      <div class="mobile-only ticket-mobile-header"><a href="${listUrl}" aria-label="Voltar para meus ingressos">${icon('back')}</a>${logo('light-logo')}</div>
+      <p class="eyebrow">Seu ingresso</p><h1 class="mobile-only ticket-view-title">É dia de encontro.</h1>${ticketPaper(preview.ticket, preview.event)}
+      ${confirmed ? '<p class="notice success mobile-only" role="status">Inscrição confirmada. Seu ingresso já está na carteira.</p>' : ''}
       <div class="wallet-actions"><button class="btn light" data-download-ticket="${esc(preview.ticket.id)}">${icon('download')} Salvar ingresso</button>
       ${preview.event.status === 'published' ? arrowLink('Ver evento', eventUrl(preview.event.id), 'btn accent-btn') : ''}</div>
     </aside>` : ''}
@@ -176,8 +217,8 @@ export function profilePage(state: State, section: string) {
         </div>
         <aside class="profile-aside">
           <div class="profile-counters"><a href="/ingressos"><b>${String(ownerTickets(state).length).padStart(2,'0')}</b> Ingressos</a><a href="/salvos"><b>${String(savedFor(state).filter(id => state.events.some(event => event.id === id && event.status === 'published')).length).padStart(2,'0')}</b> Salvos</a></div>
-          <img src="/assets/microfone.jpg" alt="" width="440" height="238"><h2>Faça acontecer.</h2>
-          <p>Seu próximo evento começa aqui.</p>${arrowLink('Área do organizador', '/organizador')}
+          <div class="profile-organizer"><img src="/assets/microfone.jpg" alt="" width="440" height="238"><div><h2>Faça acontecer.</h2>
+          <p>Seu próximo evento começa aqui.</p>${arrowLink('Área do organizador', '/organizador')}</div></div>
         </aside>
       </div>
     </div>
