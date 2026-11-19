@@ -1,11 +1,16 @@
 import { explore } from './explore.ts';
-import { categories, eventUrl, managedUrl, money, ownerTickets, priceLabel, profileFor, registrationsFor, ticketUrl } from './model.ts';
+import { categories, eventUrl, managedUrl, money, ownerTickets, priceLabel, profileFor, randomId, registrationsFor, ticketUrl } from './model.ts';
 import type { Category, EventData, Registration } from './model.ts';
 import { changePublication, checkIn, enter, enterDemo, exitProfile, formEvent, hydrate, observeUpdates, readState, registerProfile, reserve, saveEvent, toggleSave, updateProfile, validateEvent, ValidationError } from './repository.ts';
 import { access, checkout, eventDetails, profilePage, saved, wallet } from './participant.ts';
 import { dashboard, editor, eventPreview, manage, organizerEvents, organizerShell, participantStatus, participantTime, participants, participantsUrl } from './organizer.ts';
 import { avatar, empty, esc, facts, icon, logo } from './ui.ts';
+import type { Icon } from './ui.ts';
 import { ticketImage } from './ticket-image.ts';
+import { captureCards, movePage, openPanel, popFeedback, revealResults, revealStep, revealTicket, shuffleTickets, startMotion, stopPageMotion, syncHero } from './motion.ts';
+import { startNavigation, syncNavigation } from './navigation.ts';
+import { enableTicketDecks } from './ticket-deck.ts';
+import type { DeckMove } from './ticket-deck.ts';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const announcer = document.querySelector<HTMLElement>('#announcer')!;
@@ -15,22 +20,44 @@ const exploreUrl = () => sessionStorage.getItem('eventify.explore') || '/';
 let editorStage = 0;
 let editorValues: EventData | undefined;
 let notifyTimer = 0;
+const deckChoices = new Map<string, string>();
 
 function render() {
   const current = state();
   const profile = profileFor(current);
   const path = location.pathname;
-  if (path === '/') sessionStorage.setItem('eventify.explore', location.pathname + location.search);
+  const isHome = path === '/';
+  const params = new URLSearchParams(location.search);
+  if (isHome) sessionStorage.setItem('eventify.explore', location.pathname + location.search);
   const nav = (label: string, href: string, selected: boolean) => `<a href="${esc(href)}"${selected ? ' aria-current="page"' : ''}>${label}</a>`;
   const onCheckout = path.endsWith('/inscricao');
-  const header = `<header class="site-header"><div class="header-inner">
-    ${logo()}<nav class="header-nav" aria-label="Principal">${nav('Explorar', exploreUrl(), path === '/' || (path.startsWith('/eventos') && !onCheckout))}${nav('Ingressos', '/ingressos', path.startsWith('/ingressos') || onCheckout)}${nav('Salvos', '/salvos', path === '/salvos')}</nav>
-    <div class="header-actions">${nav('Para organizar', '/organizador', path.startsWith('/organizador'))}
-      <button class="header-location" data-location>${icon('pin')} São Paulo ${icon('chevron')}</button>
-      ${profile ? `<a class="account-link" href="/perfil" aria-label="Meu perfil">${avatar(profile.name)}</a>` : nav('Entrar', '/entrar', false)}
+  const organizing = path.startsWith('/organizador');
+  const exploring = isHome || (path.startsWith('/eventos') && !onCheckout);
+  const ticketsActive = path.startsWith('/ingressos') || onCheckout;
+  const organize = nav('<span class="desktop-label">Para organizar</span><span class="mobile-only">Organizar</span>', '/organizador', organizing);
+  const mobileTab = (label: string, href: string, symbol: Icon, active = false) =>
+    nav(`${icon(symbol)}<span>${label}</span>`, href, active);
+  const account = profile ? '/perfil' : '/entrar';
+  const mobileMenu = `<nav class="mobile-tabs" aria-label="${organizing ? 'Navegação do organizador' : 'Navegação móvel'}">${organizing
+    ? mobileTab('Visão geral', '/organizador', 'home', path === '/organizador')
+      + mobileTab('Eventos', '/organizador/eventos', 'calendar', /^\/organizador\/(eventos|participantes)/.test(path))
+      + mobileTab('Check-in', '/organizador/check-in', 'scan', path.startsWith('/organizador/check-in'))
+    : mobileTab('Explorar', exploreUrl(), 'compass', exploring)
+      + mobileTab('Ingressos', '/ingressos', 'ticket', ticketsActive)
+      + mobileTab('Salvos', '/salvos', 'bookmark', path === '/salvos')
+  }${mobileTab('Perfil', account, 'user', path === '/perfil')}</nav>`;
+  const city = esc(new URL(exploreUrl(), location.origin).searchParams.get('local') || 'São Paulo');
+  const header = `<header class="site-header${isHome ? ' home-header' : ''}"><div class="header-inner">
+    ${logo()}<nav class="header-nav" aria-label="Principal">
+      ${nav('Explorar', exploreUrl(), exploring)}
+      ${nav('Minha agenda', '/ingressos', ticketsActive)}
+      ${nav('Salvos', '/salvos', path === '/salvos')}
+    </nav>
+    <div class="header-actions">${organize}
+      <button class="header-location" data-location aria-label="Filtrar por localização · ${city}" ${isHome ? 'aria-expanded="false" aria-controls="filtro-local"' : ''}>${icon('pin')} <span>${city}</span>${icon('chevron')}</button>
+      ${profile ? `<a class="account-link" href="/perfil" aria-label="Meu perfil"${path === '/perfil' ? ' aria-current="page"' : ''}>${avatar(profile.name)}</a>` : nav('Entrar', '/entrar', false)}
     </div>
   </div></header>`;
-  const params = new URLSearchParams(location.search);
   const route = path.split('/').filter(Boolean);
   const notFound = `<section class="container page-body">${empty('Página indisponível.', 'Confira o endereço ou volte à programação.', ['Explorar eventos', exploreUrl()])}</section>`;
   let content = notFound;
@@ -42,13 +69,13 @@ function render() {
     if (event && route.length === 2) { content = eventDetails(current,event,exploreUrl()); title = event.title; }
     if (event && route[2] === 'inscricao') {
       const quantity = Number(params.get('quantidade') ?? '1');
-      const order = history.state?.order || crypto.randomUUID();
+      const order = history.state?.order || randomId();
       if (!history.state?.order) history.replaceState({ ...history.state, order }, '', location.href);
       content = checkout(current,event,quantity,order);
       title = 'Inscrição';
     }
   }
-  if (route[0] === 'ingressos' && route.length <= 2) { content = wallet(current,route[1],params); title = 'Meus ingressos'; }
+  if (route[0] === 'ingressos' && route.length <= 2) { content = wallet(current,route[1],params,deckChoices); title = 'Meus ingressos'; }
   if (path === '/salvos') { content = saved(current,params); title = 'Salvos'; }
   if (path === '/perfil') { content = profilePage(current,params.get('secao') || ''); title = 'Perfil'; }
   if (isAccess) { content = access(current,path === '/cadastro'); title = path === '/cadastro' ? 'Criar conta' : 'Entrar'; }
@@ -69,21 +96,64 @@ function render() {
     }
     content = organizerShell(current,organizerContent,path);
   }
-  app.innerHTML = `${isAccess ? '' : header}<main id="conteudo" tabindex="-1">${content}</main>${isAccess ? '' : '<footer class="site-footer container"><span>Eventify</span><span>Encontros que ficam.</span></footer>'}`;
+  app.innerHTML = `${isAccess ? '' : header}<main id="conteudo" tabindex="-1">${content}</main>${isAccess ? '' : `<footer class="site-footer container"><span>Eventify</span><span>Encontros que ficam.</span></footer>${mobileMenu}`}`;
+  app.dataset.path = path;
+  syncNavigation(app);
+  syncHero(app);
   document.title = title + ' · Eventify';
 }
 
-function go(href: string, scroll = true) {
-  if (href !== location.pathname + location.search) {
-    history.pushState(null, '', href);
-    editorStage = 0;
-    editorValues = undefined;
-  }
+function switchDeck({ stack, step, index, focus, pull }: DeckMove) {
+  const eventId = stack.dataset.ticketStack!;
+  const ids: string[] = JSON.parse(stack.dataset.ticketIds!);
+  const current = Number(stack.dataset.ticketCurrent);
+  const next = index ?? (current + (step ?? 0) + ids.length) % ids.length;
+  if (!ids[next] || current === next) return;
+  const previous = stack.querySelector<HTMLElement>('[data-ticket-swipe]');
+  deckChoices.set(eventId, ids[next]);
+  stopPageMotion();
+  history.replaceState(null, '', ticketUrl(ids[next]) + '?ver=lista');
   render();
-  if (scroll) {
-    window.scrollTo(0, 0);
-    document.querySelector<HTMLElement>('#conteudo')?.focus({ preventScroll: true });
+  const deck = [...app.querySelectorAll<HTMLElement>('[data-ticket-stack]')].find(item => item.dataset.ticketStack === eventId);
+  const face = deck?.querySelector<HTMLElement>('[data-ticket-swipe]');
+  if (focus) {
+    const stepButton = focus.closest<HTMLButtonElement>('[data-ticket-step]');
+    const selector = stepButton ? `[data-ticket-step="${stepButton.dataset.ticketStep}"]`
+      : focus.matches('[data-ticket-index]') ? '[data-ticket-index][aria-current]'
+      : focus.closest('a') ? '.ticket-deck-links a' : '[data-ticket-swipe]';
+    deck?.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
   }
+  shuffleTickets(previous, face, (step ?? next - current) < 0, pull);
+}
+
+function focusPage() {
+  window.scrollTo(0, 0);
+  document.querySelector<HTMLElement>('#conteudo')?.focus({ preventScroll: true });
+}
+
+function go(href: string, scroll = true, source?: HTMLAnchorElement) {
+  const previous = location.pathname;
+  const next = new URL(href, location.href);
+  const changed = href !== previous + location.search;
+  const update = () => {
+    if (changed) {
+      history.pushState(null, '', href);
+      editorStage = 0;
+      editorValues = undefined;
+    }
+    render();
+    if (scroll) focusPage();
+  };
+  if (scroll && previous !== next.pathname) {
+    const cover = /^\/eventos\/[^/]+$/.test(next.pathname)
+      ? source?.closest('[data-event-card]')?.querySelector<HTMLImageElement>('.event-media img')
+      : undefined;
+    return movePage(app, update, { cover: cover ?? undefined, back: next.pathname === '/' });
+  }
+  stopPageMotion();
+  const cards = changed && previous === '/' && next.pathname === '/' ? captureCards(app) : null;
+  update();
+  if (cards) revealResults(app, cards);
 }
 function browse(form: HTMLFormElement, overrides: Record<string, string> = {}) {
   const fields = Object.fromEntries(new FormData(form));
@@ -95,6 +165,7 @@ function browse(form: HTMLFormElement, overrides: Record<string, string> = {}) {
 function notify(message: string) {
   announcer.textContent = message;
   announcer.classList.add('visible');
+  openPanel(announcer);
   clearTimeout(notifyTimer);
   notifyTimer = window.setTimeout(() => announcer.classList.remove('visible'), 3700);
 }
@@ -102,6 +173,7 @@ function notify(message: string) {
 function showDialog(title: string, body: string) {
   dialog.innerHTML = `<div class="dialog-head"><h2 id="dialog-title">${esc(title)}</h2><form method="dialog"><button aria-label="Fechar">${icon('close')}</button></form></div>${body}`;
   dialog.showModal();
+  openPanel(dialog);
 }
 
 function showError(form: HTMLFormElement, error: unknown) {
@@ -144,7 +216,7 @@ app.addEventListener('click', async event => {
       anchor.setAttribute('aria-current','location');
     } else if (!anchor.hash) {
       event.preventDefault();
-      go(anchor.pathname + anchor.search);
+      go(anchor.pathname + anchor.search, true, anchor);
     }
     return;
   }
@@ -159,8 +231,19 @@ app.addEventListener('click', async event => {
       go('/', false);
       document.querySelector<HTMLElement>('#search-query')?.focus();
     } else if (button.hasAttribute('data-location')) {
-      if (location.pathname !== '/') go(exploreUrl());
-      document.querySelector<HTMLElement>('.location-filter select')?.focus();
+      if (location.pathname !== '/') {
+        go(exploreUrl(), false);
+        window.scrollTo(0, 0);
+      }
+      const panel = document.querySelector<HTMLElement>('#filtro-local');
+      if (panel) {
+        panel.hidden = !panel.hidden;
+        document.querySelector('[data-location]')?.setAttribute('aria-expanded', String(!panel.hidden));
+        if (!panel.hidden) {
+          panel.querySelector('select')?.focus();
+          openPanel(panel);
+        }
+      }
     } else if (button.dataset.save) {
       const id = button.dataset.save;
       button.disabled = true;
@@ -169,6 +252,7 @@ app.addEventListener('click', async event => {
       render();
       const next = [...document.querySelectorAll<HTMLButtonElement>('[data-save]')].find(item => item.dataset.save === id);
       (next || document.querySelector<HTMLElement>('#conteudo'))?.focus({ preventScroll: true });
+      popFeedback(next?.querySelector('.icon'));
     } else if (button.hasAttribute('data-demo')) {
       await enterDemo();
       go('/perfil');
@@ -225,25 +309,26 @@ async function submit(event: SubmitEvent) {
         document.querySelector<HTMLElement>('#search-query')?.focus({ preventScroll: true });
         break;
       case 'reserve':
-        go(eventUrl(form.dataset.event!) + '/inscricao?quantidade=' + Number(field('quantity')));
+        await go(eventUrl(form.dataset.event!) + '/inscricao?quantidade=' + Number(field('quantity')));
         break;
       case 'checkout': {
         const id = await reserve({ eventId: form.dataset.event!, quantity: Number(form.dataset.quantity),
           expectedPrice: Number(form.dataset.price), orderId: form.dataset.order!,
           name: field('name'), email: field('email'), method: field('method') as Registration['method'], accepted: data.has('terms') });
-        history.replaceState(null, '', ticketUrl(id) + '?confirmado=1');
-        render();
-        window.scrollTo(0,0);
-        document.querySelector<HTMLElement>('#conteudo')?.focus({ preventScroll: true });
+        await movePage(app, () => {
+          history.replaceState(null, '', ticketUrl(id) + '?confirmado=1');
+          render();
+          focusPage();
+        }, { after: () => revealTicket(app) });
         break;
       }
       case 'login':
         await enter(field('email'));
-        go('/perfil');
+        await go('/perfil');
         break;
       case 'signup':
         await registerProfile(field('name'),field('email'));
-        go('/perfil');
+        await go('/perfil');
         break;
       case 'profile':
         await updateProfile(form.dataset.section === 'preferencias'
@@ -273,10 +358,12 @@ async function submit(event: SubmitEvent) {
           const section = document.querySelector<HTMLElement>('#editor section:not([hidden]) h2');
           section?.setAttribute('tabindex','-1');
           section?.focus({ preventScroll: true });
+          revealStep(section?.parentElement, action === 'back');
+          popFeedback(app.querySelector('.stepper .current > span'));
         } else {
           const published = action === 'publish' || existing?.status === 'published';
           const next = await saveEvent(id,values,published ? 'published' : 'draft');
-          go(published ? managedUrl(next) : '/organizador/eventos');
+          await go(published ? managedUrl(next) : '/organizador/eventos');
           notify(published ? 'Evento publicado com as alterações.' : 'Rascunho salvo.');
         }
         break;
@@ -306,6 +393,7 @@ async function submit(event: SubmitEvent) {
         const box = document.querySelector<HTMLElement>('[data-check-result]')!;
         box.textContent = result.repeated ? `Entrada já registrada para ${result.ticket.name}. ${participantTime(result.ticket)}.` : `Entrada confirmada para ${result.ticket.name}.`;
         box.hidden = false;
+        openPanel(box);
         document.querySelector<HTMLElement>('#checkin-code')?.focus({ preventScroll: true });
         break;
       }
@@ -358,8 +446,34 @@ app.addEventListener('change', event => {
     if (event && total) total.textContent = event.price ? money(event.price * quantity) : priceLabel(0);
   }
 });
-window.addEventListener('popstate', () => { editorStage = 0; editorValues = undefined; render(); });
+window.addEventListener('popstate', () => {
+  editorStage = 0;
+  editorValues = undefined;
+  if (app.dataset.path !== location.pathname) {
+    movePage(app, render, { back: true });
+    return;
+  }
+  stopPageMotion();
+  const cards = location.pathname === '/' ? captureCards(app) : null;
+  render();
+  if (cards) revealResults(app, cards);
+});
+app.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const panel = document.querySelector<HTMLElement>('#filtro-local:not([hidden])');
+  if (!panel) return;
+  panel.hidden = true;
+  const trigger = document.querySelector<HTMLButtonElement>('[data-location]');
+  trigger?.setAttribute('aria-expanded','false');
+  trigger?.focus();
+});
 observeUpdates(() => { if (!app.querySelector('#editor,#checkout,#profile')) render(); });
 try { await hydrate(); }
 catch { notify('O navegador bloqueou o armazenamento local. As alterações podem ficar indisponíveis.'); }
 render();
+startMotion(app);
+startNavigation();
+enableTicketDecks(app, switchDeck);
+if (window.isSecureContext && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(error => console.warn('Acesso offline indisponível.', error));
+}

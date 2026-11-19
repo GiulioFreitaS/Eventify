@@ -1,4 +1,4 @@
-import { availability, categories, covers, demoId, isPast, profileFor, registrationsFor, savedFor, seed } from './model.ts';
+import { availability, categories, covers, demoId, isPast, profileFor, randomId, registrationsFor, savedFor, seed } from './model.ts';
 import type { Category, Cover, Event, EventData, Profile, Registration, State } from './model.ts';
 
 const legacyKey = 'eventify.desktop.v1';
@@ -134,7 +134,7 @@ export function registerProfile(name: string, email: string) {
     email = email.toLowerCase();
     identity(name, email);
     if (state.profiles.some(profile => profile.email === email)) throw new ValidationError('Já existe um perfil local com este e-mail.');
-    const id = crypto.randomUUID();
+    const id = randomId();
     state.profiles.push({ id, name, email, interests: [], reminders: false });
     state.activeProfile = id;
   });
@@ -175,7 +175,7 @@ export function reserve(input: {
     const codes = new Set(state.registrations.map(item => item.code));
     const tickets = Array.from({ length: input.quantity }, (_, index): Registration => {
       let code: string;
-      do { code = 'EVT-' + crypto.randomUUID().slice(0, 8).toUpperCase(); } while (codes.has(code));
+      do { code = 'EVT-' + randomId().slice(0, 8).toUpperCase(); } while (codes.has(code));
       codes.add(code);
       return { id: `${input.orderId}-${index + 1}`, eventId: event.id, profileId,
         name: input.name, email: input.email.toLowerCase(), code, price: event.price,
@@ -226,7 +226,7 @@ export function saveEvent(id: string | undefined, data: EventData, status: Event
     if (current && data.capacity < registrationsFor(state, current.id).length) {
       throw new ValidationError('A capacidade não pode ser menor que o número de ingressos já emitidos.');
     }
-    const event: Event = { ...data, id: current?.id || crypto.randomUUID(), status, managed: true };
+    const event: Event = { ...data, id: current?.id || randomId(), status, managed: true };
     if (current) Object.assign(current, event);
     else state.events.push(event);
     return event.id;

@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Eventify",
+  "short_name": "Eventify",
+  "description": "Descubra, guarde e organize os encontros da sua cidade.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#f7ecdf",
+  "background_color": "#f7ecdf",
+  "icons": [
+    { "src": "/assets/eventify-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/eventify-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Minha agenda", "url": "/ingressos" },
+    { "name": "Check-in", "url": "/organizador/check-in" }
+  ]
+}
