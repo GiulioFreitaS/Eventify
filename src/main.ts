@@ -160,7 +160,8 @@ function browse(form: HTMLFormElement, overrides: Record<string, string> = {}) {
   const data = { ...fields, ...overrides };
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(data)) { if (String(value).trim()) query.set(key, String(value).trim()); }
-  go(query.size ? '/?' + query : '/', false);
+  const filters = query.toString();
+  go(filters ? '/?' + filters : '/', false);
 }
 function notify(message: string) {
   announcer.textContent = message;
@@ -184,7 +185,22 @@ function showError(form: HTMLFormElement, error: unknown) {
   slot.hidden = false;
 }
 
+const android = (window as Window & {
+  EventifyAndroid?: {
+    saveDocument(name: string, mimeType: string, dataUrl: string): void;
+    pageReady?(): void;
+    pageFailed?(): void;
+  };
+}).EventifyAndroid;
+
 function download(name: string, blob: Blob) {
+  if (android) {
+    const reader = new FileReader();
+    reader.onload = () => android.saveDocument(name, blob.type.split(';')[0], String(reader.result));
+    reader.onerror = () => notify('Não foi possível preparar o arquivo.');
+    reader.readAsDataURL(blob);
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -195,7 +211,7 @@ function download(name: string, blob: Blob) {
 
 function csvCell(value: string) {
   const safe = /^[=+\-@\t\r]/.test(value) ? "'" + value : value;
-  return '"' + safe.replaceAll('"','""') + '"';
+  return '"' + safe.replace(/"/g, '""') + '"';
 }
 
 app.addEventListener('click', async event => {
@@ -467,13 +483,21 @@ app.addEventListener('keydown', event => {
   trigger?.setAttribute('aria-expanded','false');
   trigger?.focus();
 });
-observeUpdates(() => { if (!app.querySelector('#editor,#checkout,#profile')) render(); });
-try { await hydrate(); }
-catch { notify('O navegador bloqueou o armazenamento local. As alterações podem ficar indisponíveis.'); }
-render();
-startMotion(app);
-startNavigation();
-enableTicketDecks(app, switchDeck);
-if (window.isSecureContext && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(error => console.warn('Acesso offline indisponível.', error));
+async function start() {
+  observeUpdates(() => { if (!app.querySelector('#editor,#checkout,#profile')) render(); });
+  try { await hydrate(); }
+  catch { notify('O navegador bloqueou o armazenamento local. As alterações podem ficar indisponíveis.'); }
+  render();
+  startMotion(app);
+  startNavigation();
+  enableTicketDecks(app, switchDeck);
+  android?.pageReady?.();
+  if (!android && window.isSecureContext && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(error => console.warn('Acesso offline indisponível.', error));
+  }
 }
+
+void start().catch(error => {
+  console.error('Falha ao iniciar a Eventify.', error);
+  android?.pageFailed?.();
+});

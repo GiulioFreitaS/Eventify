@@ -7,7 +7,7 @@ const objectStore = 'state';
 type Stored = { revision: number; state: State };
 let database: Promise<IDBDatabase> | undefined;
 let current: Stored | undefined;
-const changes = new BroadcastChannel('eventify.desktop.changes');
+const changes = typeof BroadcastChannel === 'function' ? new BroadcastChannel('eventify.desktop.changes') : undefined;
 
 export class ValidationError extends Error {}
 
@@ -63,7 +63,7 @@ export async function hydrate() {
 }
 
 export function observeUpdates(listener: () => void) {
-  changes.addEventListener('message', () => {
+  changes?.addEventListener('message', () => {
     void hydrate().then(updated => { if (updated) listener(); }).catch(() => {});
   });
 }
@@ -91,7 +91,7 @@ async function write<T>(operation: (state: State) => T): Promise<T> {
     };
     transaction.oncomplete = () => {
       useRecord(record);
-      changes.postMessage(record.revision);
+      changes?.postMessage(record.revision);
       resolve(result);
     };
     transaction.onabort = () => reject(failure ?? transaction.error);
@@ -200,7 +200,7 @@ export function formEvent(form: FormData): EventData {
 
 export function validateEvent(data: EventData, stage: 1 | 2) {
   if (stage === 1 && (data.title.length < 3 || !data.description || !data.organizer
-    || !categories.includes(data.category) || !Object.hasOwn(covers, data.cover))) {
+    || !categories.includes(data.category) || !Object.prototype.hasOwnProperty.call(covers, data.cover))) {
     throw new ValidationError('Preencha o nome do evento, a categoria, a organização e a descrição.');
   }
   if (stage === 2) {

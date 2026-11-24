@@ -12,12 +12,20 @@ let hero: HTMLElement | null = null;
 let heroDepth: HTMLElement | null = null;
 let scrollFrame = 0;
 
+function whenAnimationEnds(animation: Animation, cleanup: () => void) {
+  if (animation.finished) {
+    void animation.finished.then(cleanup, cleanup);
+    return;
+  }
+  animation.addEventListener('finish', cleanup, { once: true });
+  animation.addEventListener('cancel', cleanup, { once: true });
+}
+
 function play(element: Element | null | undefined, frames: Keyframe[], duration: number, delay = 0, easing = easeOut) {
   if (!element || preference.matches || typeof element.animate !== 'function') return;
   const animation = element.animate(frames, { duration, delay, easing, fill: 'backwards' });
   animations.add(animation);
-  const forget = () => animations.delete(animation);
-  animation.finished.then(forget, forget);
+  whenAnimationEnds(animation, () => { animations.delete(animation); });
   return animation;
 }
 
@@ -249,7 +257,7 @@ export function shuffleTickets(previous: HTMLElement | null, incoming: HTMLEleme
     { zIndex: 0, transform: 'translate3d(11px,12px,0) rotate(1.35deg) scale(.97)', opacity: 0 },
   ], duration, 0, easing);
   const remove = () => outgoing.remove();
-  if (animation) animation.finished.then(remove, remove);
+  if (animation) whenAnimationEnds(animation, remove);
   else remove();
 }
 
@@ -261,7 +269,7 @@ export function revealTicket(root: HTMLElement) {
   ], 560, 65);
 }
 
-preference.addEventListener('change', () => {
+function syncMotionPreference() {
   if (preference.matches) {
     transition?.skipTransition();
     observer?.disconnect();
@@ -270,4 +278,10 @@ preference.addEventListener('change', () => {
   } else {
     queueDepth();
   }
-});
+}
+
+if (typeof preference.addEventListener === 'function') {
+  preference.addEventListener('change', syncMotionPreference);
+} else {
+  preference.addListener(syncMotionPreference);
+}

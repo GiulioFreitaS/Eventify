@@ -9,6 +9,18 @@ async function loadImage(src: string) {
   return image;
 }
 
+function ticketPath(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const right = x + width;
+  const bottom = y + height;
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.arcTo(right, y, right, bottom, radius);
+  context.arcTo(right, bottom, x, bottom, radius);
+  context.arcTo(x, bottom, x, y, radius);
+  context.arcTo(x, y, right, y, radius);
+  context.closePath();
+}
+
 export async function ticketImage(ticket: Registration, event: Event) {
   const [photo, mark] = await Promise.all([loadImage(picture(event)), loadImage('/assets/eventify.png')]);
   const canvas = document.createElement('canvas');
@@ -19,8 +31,7 @@ export async function ticketImage(ticket: Registration, event: Event) {
   context.fillStyle = '#3b2315';
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.fillStyle = '#fcf1e3';
-  context.beginPath();
-  context.roundRect(48, 48, 904, 1004, 28);
+  ticketPath(context, 48, 48, 904, 1004, 28);
   context.fill();
   context.drawImage(mark, 86, 85, 225, 50);
   context.fillStyle = '#685244';
@@ -35,8 +46,7 @@ export async function ticketImage(ticket: Registration, event: Event) {
   const sourceWidth = photoWidth / scale;
   const sourceHeight = photoHeight / scale;
   context.save();
-  context.beginPath();
-  context.roundRect(86, 166, photoWidth, photoHeight, 15);
+  ticketPath(context, 86, 166, photoWidth, photoHeight, 15);
   context.clip();
   context.drawImage(photo, (photo.width-sourceWidth)/2, (photo.height-sourceHeight)/2, sourceWidth, sourceHeight, 86, 166, photoWidth, photoHeight);
   context.restore();
