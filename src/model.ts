@@ -68,7 +68,7 @@ export function seed(): State {
         createdAt: '2026-11-16T18:00:00.000Z', checkedInAt: null };
     });
   });
-  return { version: 1, events: structuredClone(demoEvents), profiles: [profile], registrations,
+  return { version: 1, events: demoEvents.map(event => ({ ...event })), profiles: [profile], registrations,
     activeProfile: demoId, saved: { [demoId]: ['cinema-no-terraco', 'oficina-de-ceramica', 'som-no-patio'] } };
 }
 
