@@ -54,7 +54,7 @@ const demoEvents: Event[] = [
 ];
 
 export function seed(): State {
-  const profile: Profile = { id: demoId, name: 'Giulio Pimentel', email: 'demo@exemplo.com', interests: [], reminders: false };
+  const profile: Profile = { id: demoId, name: 'Alex Demo', email: 'demo@exemplo.com', interests: [], reminders: false };
   const names = ['Ana Souza', 'Lucas Santos', 'Marina Costa', 'Rafa Lima', 'João Dias', 'Lia Alves'];
   const registrations = [['som-no-patio', 38], ['oficina-de-ceramica', 26]].flatMap(([eventId, count]) => {
     const event = demoEvents.find(item => item.id === eventId)!;
